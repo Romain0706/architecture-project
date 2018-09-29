@@ -1,12 +1,20 @@
 <template>
   <div class="home-container">
-    <label for="customers">Customers :</label>
-    <input id="customers" type="number" v-model="customersAmount">
-    <label for="sleep-time">Delay (ms) :</label>
-    <input id="sleep-time" type="number" v-model="sleepTime">
-    <p>Time Unit : {{ timeUnit }}</p>
-    <button @click="start()" v-if="!isRunning">START</button>
-    <button @click="stop()" v-if="isRunning">STOP</button>
+    <div class="settings-container">
+      <label for="customers">Customers :</label>
+      <input id="customers" type="number" v-model="customersAmount" :disabled="!firstRun">
+      <label for="sleep-time">Delay (ms) :</label>
+      <input id="sleep-time" type="number" v-model="sleepTime">
+      <p class="time-unit">Time Unit : {{ timeUnit }}</p>
+      <label for="logs">Show logs :</label>
+      <input id="logs" type="checkbox" v-model="showLogs"><br/>
+      <div class="log-container" v-if="showLogs">
+        <p v-for="(log, logIndex) in logs" :key="logIndex + 'log'">{{ log }}</p>
+      </div>
+      <button @click="start()" v-if="!isRunning">START</button>
+      <button @click="stop()" v-if="isRunning">STOP</button>
+      <button @click="reset()">RESET</button>
+    </div>
     <div class="app-container">
       <div class="shop-container">
         <div class="shop-column" v-for="(column, columnIndex) in shop" :key="columnIndex + 'column'">
@@ -29,11 +37,35 @@
   border-radius: 100%;
 }
 
+.time-unit {
+  margin: 10px 0;
+}
+
+label {
+  margin-right: 5px;
+}
+
+button {
+  margin-top: 5px;
+  margin-right: 5px;
+}
+
+.log-container {
+  margin-top: 5px;
+  height: 200px;
+  overflow: scroll;
+  border: 1px solid black;
+  overflow-x: hidden;
+}
+
+.settings-container {
+  padding: 10px;
+}
+
 .app-container {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  position: relative;
+  margin-left: 80px;
+  margin-top: 80px;
 }
 
 .shop-container {
@@ -58,10 +90,15 @@ export default {
   name: 'Home',
   data () {
     return {
+      showLogs: true,
       isRunning: false,
+      firstRun: true,
       customersAmount: 250,
+      customersInitialAmount: 0,
+      customersWaiting: 0,
       sleepTime: 250,
       timeUnit: 0,
+      logs: [],
       colors: [
         { name: '#86aace', positions: [{ x: 0.5, y: 0.5 }, { x: 3.5, y: 3.5 }] },
         { name: '#f09f61', positions: [{ x: 1.5, y: 0.5 }, { x: 2.5, y: 3.5 }] },
@@ -131,37 +168,71 @@ export default {
     }
   },
   methods: {
+    checkCanMoveX (robot) {
+      let nextMoveX = robot.actualPosition.x < robot.goalPosition.x ? robot.actualPosition.x + 0.5 : robot.actualPosition.x - 0.5
+      if (nextMoveX === robot.goalPosition.x) {
+        if (robot.actualPosition.y === robot.goalPosition.y) {
+          return true
+        } else {
+          return false
+        }
+      } else if ((robot.actualPosition.y % 1) === 0) {
+        return true
+      } else {
+        return false
+      }
+    },
+    checkCanMoveY (robot) {
+      let nextMoveX = robot.actualPosition.x < robot.goalPosition.x ? robot.actualPosition.x + 0.5 : robot.actualPosition.x - 0.5
+      if (nextMoveX === robot.goalPosition.x) {
+        return true
+      } else if ((robot.actualPosition.x % 0.5) === 0) {
+        return true
+      } else {
+        return false
+      }
+    },
     moveRobots () {
       let vm = this
-      vm.robots.forEach(function (robot) {
-        if (robot.actualPosition.x !== robot.goalPosition.x) {
-          robot.actualPosition.x = robot.actualPosition.x < robot.goalPosition.x ? robot.actualPosition.x + 0.5 : robot.actualPosition.x - 0.5
-        } else if (robot.actualPosition.y !== robot.goalPosition.y) {
-          robot.actualPosition.y = robot.actualPosition.y < robot.goalPosition.y ? robot.actualPosition.y + 0.5 : robot.actualPosition.y - 0.5
-        } else {
-          if ((robot.actualPosition.x === robot.startPosition.x) && (robot.actualPosition.y === robot.startPosition.y)) {
-            delete robot.request
-            delete robot.timeToFetch
-            delete robot.goalPosition
-            vm.customersAmount--
+      vm.robots.forEach(function (robot, robotIndex) {
+        if ('request' in robot) {
+          let hasMoved = false
+          if (!((robot.actualPosition.x === robot.goalPosition.x) && (robot.actualPosition.y === robot.goalPosition.y))) {
+            if (vm.checkCanMoveX(robot)) {
+              robot.actualPosition.x = robot.actualPosition.x < robot.goalPosition.x ? robot.actualPosition.x + 0.5 : robot.actualPosition.x - 0.5
+              vm.logs.push('Robots ' + robotIndex + ': move to x:' + robot.actualPosition.x + ' y:' + robot.actualPosition.y)
+              hasMoved = true
+            }
+            if (!hasMoved) {
+              if (vm.checkCanMoveY(robot)) {
+                robot.actualPosition.y = robot.actualPosition.y < robot.goalPosition.y ? robot.actualPosition.y + 0.5 : robot.actualPosition.y - 0.5
+                vm.logs.push('Robot ' + robotIndex + ': move to x:' + robot.actualPosition.x + ' y:' + robot.actualPosition.y)
+                hasMoved = true
+              }
+            }
           } else {
-            if (!('timeToFetch' in robot)) {
-              robot.timeToFetch = 5
+            if ((robot.actualPosition.x === robot.startPosition.x) && (robot.actualPosition.y === robot.startPosition.y)) {
+              delete robot.request
+              delete robot.timeToFetch
+              delete robot.goalPosition
+              vm.customersAmount--
             } else {
-              if (robot.timeToFetch === 0) {
-                robot.goalPosition.x = robot.startPosition.x
-                robot.goalPosition.y = robot.startPosition.y
+              if (!('timeToFetch' in robot)) {
+                robot.timeToFetch = 5
+                vm.logs.push('Robot ' + robotIndex + 'starts to fetch')
               } else {
-                robot.timeToFetch--
+                if (robot.timeToFetch === 0) {
+                  robot.goalPosition.x = robot.startPosition.x
+                  robot.goalPosition.y = robot.startPosition.y
+                } else {
+                  robot.timeToFetch--
+                  vm.logs.push('Robot ' + robotIndex + ' is fetching, ' + robot.timeToFetch + ' times left')
+                }
               }
             }
           }
         }
       })
-    },
-    moveRobot (robotIndex, x, y) {
-      this.robots[robotIndex].actualPosition.x = x
-      this.robots[robotIndex].actualPosition.y = y
     },
     getPosition (robotIndex) {
       let top = this.robots[robotIndex].actualPosition.y * 110
@@ -171,18 +242,22 @@ export default {
     },
     setRequests () {
       let vm = this
-      vm.robots.forEach(function (robot) {
+      vm.robots.forEach(function (robot, robotIndex) {
         if (!('request' in robot)) {
-          let color = vm.colors[Math.floor(Math.random() * Math.floor(vm.colors.length))].name
-          let references = Math.floor(Math.random() * Math.floor(1000))
-          robot.request = { color: color, references: references }
+          if (vm.customersWaiting < vm.customersInitialAmount) {
+            let color = vm.colors[Math.floor(Math.random() * Math.floor(vm.colors.length))].name
+            let references = Math.floor(Math.random() * Math.floor(1000))
+            robot.request = { color: color, references: references }
+            vm.logs.push('Setting request for robot ' + robotIndex + ' : color requested = ' + color + ', references requested = ' + references)
+            vm.customersWaiting++
+          }
         }
       })
     },
     setGoals () {
       let vm = this
       vm.robots.forEach(function (robot) {
-        if (!('goalPosition' in robot)) {
+        if (!('goalPosition' in robot) && ('request' in robot)) {
           let color = vm.colors.find(function (color) {
             return color.name === robot.request.color
           })
@@ -213,18 +288,26 @@ export default {
             vm.main()
           } else {
             vm.isRunning = false
+            vm.firstRun = true
           }
         }, vm.sleepTime)
       }
     },
     start () {
       if (!this.isRunning && this.customersAmount > 0) {
+        if (this.firstRun) {
+          this.firstRun = false
+          this.customersInitialAmount = this.customersAmount
+        }
         this.isRunning = true
         this.main()
       }
     },
     stop () {
       this.isRunning = false
+    },
+    reset () {
+      location.reload()
     }
   }
 }
